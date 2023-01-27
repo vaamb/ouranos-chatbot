@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import os
 import typing as t
 
 import click
@@ -35,7 +35,7 @@ def main(
     the database and manage Gaia's instances
     """
     asyncio.run(
-        run_functionality_forever(Chatbot)
+        run_functionality_forever(Chatbot, config_profile)
     )
 
 
@@ -47,7 +47,11 @@ class Chatbot(Functionality):
     ) -> None:
         super().__init__(config_profile, config_override)
         application = ApplicationBuilder()
-        application.token(current_app.config["TELEGRAM_BOT_TOKEN"])
+        token = (
+            current_app.config.get("TELEGRAM_BOT_TOKEN") or
+            os.environ.get("TELEGRAM_BOT_TOKEN")
+        )
+        application.token(token)
         self.application = application.build()
         self.load_handlers()
 
