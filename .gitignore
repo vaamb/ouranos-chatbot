@@ -1,0 +1,13 @@
+__pycache__/
+.idea/
+.pytest_cache/
+
+.cache/
+.logs/
+venv/
+migrations/
+
+*.db
+*private*
+*.egg-info
+*.json
