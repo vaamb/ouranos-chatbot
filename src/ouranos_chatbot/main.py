@@ -1,13 +1,9 @@
-from __future__ import annotations
-
-import asyncio
 import os
 import typing as t
 
 import click
 from telegram.ext import (
-    filters, MessageHandler, ApplicationBuilder, CommandHandler
-)
+    Application, ApplicationBuilder, CommandHandler, filters, MessageHandler)
 
 from ouranos import current_app
 from ouranos.sdk import Functionality, run_functionality_forever
@@ -34,9 +30,7 @@ def main(
     using telegram. It provides commands that allows the user to get data from
     the database and manage Gaia's instances
     """
-    asyncio.run(
-        run_functionality_forever(Chatbot, config_profile)
-    )
+    run_functionality_forever(Chatbot, config_profile)
 
 
 class Chatbot(Functionality):
@@ -44,16 +38,14 @@ class Chatbot(Functionality):
             self,
             config_profile: "profile_type" = None,
             config_override: dict | None = None,
+            **kwargs
     ) -> None:
-        super().__init__(config_profile, config_override)
-        application = ApplicationBuilder()
-        token = (
+        super().__init__(config_profile, config_override, **kwargs)
+        self._token = (
             current_app.config.get("TELEGRAM_BOT_TOKEN") or
             os.environ.get("TELEGRAM_BOT_TOKEN")
         )
-        application.token(token)
-        self.application = application.build()
-        self.load_handlers()
+        self.application: Application | None = None
 
     def load_handlers(self):
         from ouranos_chatbot.commands import (
@@ -71,20 +63,17 @@ class Chatbot(Functionality):
         unknown_command_handler = MessageHandler(filters.COMMAND, unknown_command)
         self.application.add_handler(unknown_command_handler)
 
-    def _start(self):
-        async def start():
-            await self.application.initialize()
-            await self.application.updater.start_polling()
-            await self.application.start()
+    async def _startup(self):
+        self.application = ApplicationBuilder().token(self._token).build()
+        self.load_handlers()
+        await self.application.initialize()
+        await self.application.updater.start_polling()
+        await self.application.start()
 
-        asyncio.ensure_future(start())
 
-    def _stop(self):
-        async def stop():
-            if self.application.updater.running:
-                await self.application.updater.stop()
-            if self.application.running:
-                await self.application.stop()
-            await self.application.shutdown()
-
-        asyncio.ensure_future(stop())
+    async def _shutdown(self):
+        if self.application.updater.running:
+            await self.application.updater.stop()
+        if self.application.running:
+            await self.application.stop()
+        await self.application.shutdown()
