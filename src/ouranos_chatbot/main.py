@@ -1,12 +1,14 @@
-import os
 import typing as t
 
 import click
 from telegram.ext import (
     Application, ApplicationBuilder, CommandHandler, filters, MessageHandler)
 
+from gaia_validators import missing
 from ouranos import current_app
 from ouranos.sdk import Functionality, run_functionality_forever
+
+from ouranos_chatbot.config import Config
 
 
 if t.TYPE_CHECKING:
@@ -41,10 +43,19 @@ class Chatbot(Functionality):
             **kwargs
     ) -> None:
         super().__init__(config_profile, config_override, **kwargs)
-        self._token = (
-            current_app.config.get("TELEGRAM_BOT_TOKEN") or
-            os.environ.get("TELEGRAM_BOT_TOKEN")
-        )
+        token = current_app.config.get("TELEGRAM_BOT_TOKEN", missing)
+        if token is missing:
+            self.logger.warning(
+                "The config class used for Ouranos does not subclass "
+                "`ouranos_chatbot.Config`. Falling back to default values."
+            )
+            token = Config().TELEGRAM_BOT_TOKEN
+        if token is None:
+            self.logger.error(
+                "The config parameters 'TELEGRAM_BOT_TOKEN' is not set, it is"
+                "not possible to use the chatbot functionality"
+            )
+        self.token = token
         self.application: Application | None = None
 
     def load_handlers(self):
@@ -64,7 +75,12 @@ class Chatbot(Functionality):
         self.application.add_handler(unknown_command_handler)
 
     async def _startup(self):
-        self.application = ApplicationBuilder().token(self._token).build()
+        if self.token is None:
+            raise ValueError(
+                "The config parameters 'TELEGRAM_BOT_TOKEN' is not set,"
+                "it is not possible to use the chatbot functionality"
+            )
+        self.application = ApplicationBuilder().token(self.token).build()
         self.load_handlers()
         await self.application.initialize()
         await self.application.updater.start_polling()
