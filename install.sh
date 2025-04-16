@@ -9,11 +9,9 @@ cd $OURANOS_DIR
 source venv/bin/activate
 
 # Get the Chatbot and install the package
-cd "bin"
+cd "lib"
 
-mkdir "chatbot"; cd "chatbot"
-git clone --branch stable https://gitlab.com/gaia/ouranos-chatbot.git "ouranos-chatbot"; cd "ouranos-chatbot"
-pip install -r requirements.txt
+git clone https://github.com/vaamb/ouranos-chatbot.git "ouranos-chatbot"; cd "ouranos-chatbot"
 pip install -e .
 
 cd "$ORIGIN"
