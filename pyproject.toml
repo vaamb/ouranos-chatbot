@@ -1,6 +1,36 @@
+[project]
+name = "ouranos_chatbot"
+description = "A telegram chatbot plugin for Ouranos"
+authors = [
+    {name = "Valentin Ambroise", email = "valentin.ambroise@outlook.com"}
+]
+requires-python = ">=3.11"
+readme = "README.md"
+license = {file = "LICENSE"}
+dynamic = ["version"]
+dependencies = [
+    "python-telegram-bot~=20.0",
+
+    # From git
+    "ouranos @ git+https://github.com/vaamb/ouranos-core.git"
+]
+
+[project.entry-points."ouranos.plugins"]
+frontend = "ouranos_chatbot.plugin_setup:plugin"
+
+[project.urls]
+repository  = "https://github.com/vaamb/ouranos-chatbot.git"
+
 [build-system]
 requires = [
-    "setuptools>=42",
+    "setuptools>=61",
     "wheel"
 ]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+zip-safe = false
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "ouranos_chatbot.__version__"}

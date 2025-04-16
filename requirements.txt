@@ -1,3 +1,0 @@
-python-telegram-bot~=20.0.0
-
--e git+https://gitlab.com/eupla/ouranos#egg=ouranos
