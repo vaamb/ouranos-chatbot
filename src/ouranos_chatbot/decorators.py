@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import functools
 from inspect import signature
 
@@ -7,7 +5,7 @@ from telegram import Update
 from telegram.ext import CallbackContext
 
 from ouranos import db
-from ouranos.core.database.models import User
+from ouranos.core.database.models.app import Permission, User
 
 from ouranos_chatbot.auth import get_current_user
 
@@ -17,17 +15,18 @@ def activation_required(func):
         telegram_id = update.effective_chat.id
         async with db.scoped_session() as session:
             user = await get_current_user(session, telegram_id)
-        if user:
-            if "user" in signature(func).parameters:
-                return await func(update, context, user)
-            return await func(update, context)
-        await update.message.reply_html(
-            "You need to be registered to use this command"
-        )
+        if user.is_anonymous:
+            await update.message.reply_html(
+                "You need to be registered to use this command")
+            return
+        if "user" in signature(func).parameters:
+            return await func(update, context, user)
+        return await func(update, context)
+
     return wrapper
 
 
-def permission_required(permission: int):
+def permission_required(permission: Permission):
     def decorator(func):
         @functools.wraps(func)
         async def wrapped(
