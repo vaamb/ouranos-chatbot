@@ -1,13 +1,21 @@
 import functools
 from inspect import signature
+from typing import Type
 
 from telegram import Update
-from telegram.ext import CallbackContext
+from telegram.ext import BaseHandler, CallbackContext
+from telegram.ext.filters import BaseFilter
 
 from ouranos import db
 from ouranos.core.database.models.app import Permission, User
 
 from ouranos_chatbot.auth import get_current_user
+
+
+def make_handler(handler: Type[BaseHandler], command_or_filter: str | BaseFilter):
+    def decorator(func):
+        return handler(command_or_filter, func)
+    return decorator
 
 
 def activation_required(func):
