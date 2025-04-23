@@ -19,8 +19,9 @@ def make_handler(handler: Type[BaseHandler], command_or_filter: str | BaseFilter
 
 
 def activation_required(func):
+    @functools.wraps(func)
     async def wrapper(update: Update, context: CallbackContext):
-        telegram_id = update.effective_chat.id
+        telegram_id = update.effective_user.id
         async with db.scoped_session() as session:
             user = await get_current_user(session, telegram_id)
         if user.is_anonymous:
@@ -30,7 +31,6 @@ def activation_required(func):
         if "user" in signature(func).parameters:
             return await func(update, context, user)
         return await func(update, context)
-
     return wrapper
 
 
@@ -43,7 +43,7 @@ def permission_required(permission: Permission):
                 user: User | None = None
         ):
             if not user:
-                telegram_id = update.effective_chat.id
+                telegram_id = update.effective_user.id
                 async with db.scoped_session() as session:
                     user = await get_current_user(session, telegram_id)
             if user.can(permission):
