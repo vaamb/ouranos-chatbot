@@ -1,0 +1,12 @@
+{% if ecosystems | length == 0 -%}
+There is not ecosystem currently connected to GAIA
+{% else -%}
+{% if ecosystems | length == 1 %}
+There is currently only one ecosystem connected to GAIA:
+{% else %}
+The following ecosystems are connected to GAIA:
+{% endif %}
+{% for ecosystem in ecosystems -%}
+- {{ ecosystem["name"] }}
+{% endfor %}
+{% endif %}
