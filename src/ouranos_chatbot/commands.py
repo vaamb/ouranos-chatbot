@@ -189,6 +189,14 @@ def base_of_tree(self, update, context) -> None:
 """
 
 
+def _get_command_helper(handler: CommandHandler) -> str:
+    commands: list[str] = [i for i in handler.commands]
+    if len(commands) > 1:
+        raise ValueError("Only one command is allowed per handler")
+    doc = getdoc(handler.callback).replace("\n", " ")
+    return f"/{commands[0]} : {doc}\n"
+
+
 async def help_cmd(update: Update, context: CallbackContext) -> None:
     telegram_id = update.effective_chat.id
     async with db.scoped_session() as session:
