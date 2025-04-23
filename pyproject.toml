@@ -10,9 +10,6 @@ license = {file = "LICENSE"}
 dynamic = ["version"]
 dependencies = [
     "python-telegram-bot~=20.0",
-
-    # From git
-    "ouranos @ git+https://github.com/vaamb/ouranos-core.git"
 ]
 
 [project.entry-points."ouranos.plugins"]
