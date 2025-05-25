@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.entry-points."ouranos.plugins"]
-frontend = "ouranos_chatbot.plugin_setup:plugin"
+chatbot = "ouranos_chatbot.plugin_setup:plugin"
 
 [project.urls]
 repository  = "https://github.com/vaamb/ouranos-chatbot.git"

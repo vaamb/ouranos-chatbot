@@ -1,9 +1,13 @@
 from ouranos.sdk import Plugin
 
-from ouranos_chatbot import Chatbot, main
+from ouranos_chatbot import Chatbot
+
 
 plugin = Plugin(
-    name="chatbot",
     functionality=Chatbot,
-    command=main
+    description="""Launch Ouranos' Chatbot
+
+    The Chatbot provides a way that allows users to interact with Ouranos through
+    a Telegram chatbot.
+    """,
 )
