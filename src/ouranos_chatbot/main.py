@@ -18,7 +18,7 @@ class Chatbot(Functionality):
             token = Config().TELEGRAM_BOT_TOKEN
         if token is None:
             self.logger.error(
-                "The config parameters 'TELEGRAM_BOT_TOKEN' is not set, it is"
+                "The config parameters 'TELEGRAM_BOT_TOKEN' is not set, it is "
                 "not possible to use the chatbot functionality.")
         self.token = token
         self.application: Application | None = None
@@ -32,8 +32,8 @@ class Chatbot(Functionality):
     async def _startup(self):
         if self.token is None:
             raise ValueError(
-                "The config parameters 'TELEGRAM_BOT_TOKEN' is not set,"
-                "it is not possible to use the chatbot plugin"
+                "The config parameters 'TELEGRAM_BOT_TOKEN' is not set, it is "
+                "not possible to use the chatbot functionality."
             )
         self.application = Application.builder().token(self.token).build()
         self.load_handlers()
