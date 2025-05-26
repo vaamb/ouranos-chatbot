@@ -1,5 +1,4 @@
-from telegram.ext import (
-    Application, ApplicationBuilder, CommandHandler, filters, MessageHandler)
+from telegram.ext import Application
 
 from gaia_validators import missing
 from ouranos.core.config import ConfigDict
@@ -19,34 +18,24 @@ class Chatbot(Functionality):
             token = Config().TELEGRAM_BOT_TOKEN
         if token is None:
             self.logger.error(
-                "The config parameters 'TELEGRAM_BOT_TOKEN' is not set, it is"
+                "The config parameters 'TELEGRAM_BOT_TOKEN' is not set, it is "
                 "not possible to use the chatbot functionality.")
         self.token = token
         self.application: Application | None = None
 
     def load_handlers(self):
-        from ouranos_chatbot.commands import (
-            ecosystem_status, help_cmd, start, unknown_command
-        )
-        start_handler = CommandHandler('start', start)
-        self.application.add_handler(start_handler)
+        from ouranos_chatbot.commands import HANDLERS
 
-        ecosystem_status_handler = CommandHandler('ecosystem_status', ecosystem_status)
-        self.application.add_handler(ecosystem_status_handler)
-
-        help_handler = CommandHandler("help", help_cmd)
-        self.application.add_handler(help_handler)
-
-        unknown_command_handler = MessageHandler(filters.COMMAND, unknown_command)
-        self.application.add_handler(unknown_command_handler)
+        for handler in HANDLERS:
+            self.application.add_handler(handler)
 
     async def _startup(self):
         if self.token is None:
             raise ValueError(
-                "The config parameters 'TELEGRAM_BOT_TOKEN' is not set,"
-                "it is not possible to use the chatbot functionality"
+                "The config parameters 'TELEGRAM_BOT_TOKEN' is not set, it is "
+                "not possible to use the chatbot functionality."
             )
-        self.application = ApplicationBuilder().token(self.token).build()
+        self.application = Application.builder().token(self.token).build()
         self.load_handlers()
         await self.application.initialize()
         await self.application.updater.start_polling()

@@ -1,0 +1,21 @@
+{% if not ecosystems %}
+There is no ecosystem currently connected to GAIA.
+{% elif ecosystems %}
+{% if ecosystems | length == 1 %}
+Here is an overview of the sensors measure in the ecosystem {{ "".join(ecosystems | get_names) }}:
+{% elif ecosystems | length > 1 %}
+Here is an overview of the sensors measure in the ecosystems {{ ", ".join(ecosystems | get_names) }}:
+-----------
+{% endif %}
+{% for ecosystem in ecosystems %}
+{% if ecosystems | length > 1 -%}
+{{ ecosystem["name"] }}
+{% endif %}
+{% for measure in ecosystem["current_data"] %}
+- {{ measure["name"] | capitalize | replace("_", " ") }}: {{ measure["value"] }} {{ units.get(measure["name"], "") }}
+{% endfor %}
+{% if loop.index < ecosystems | length %}
+-----------
+{% endif %}
+{% endfor %}
+{% endif %}

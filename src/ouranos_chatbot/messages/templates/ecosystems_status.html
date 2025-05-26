@@ -1,0 +1,10 @@
+{% for ecosystem in ecosystems %}
+Ecosystem {{ ecosystem["name"] }} is currently
+{%- if ecosystem["connected"] %}
+ connected and {{ "running" if ecosystem["status"] else "switched off"}}.
+{%- else %}
+ disconnected. It was last seen on {{ ecosystem["last_seen"] | format_datetime }}.
+{% endif %}
+{% else %}
+There is not ecosystem currently registered to GAIA
+{% endfor %}

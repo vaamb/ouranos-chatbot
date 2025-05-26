@@ -1,21 +1,72 @@
-from __future__ import annotations
+from inspect import getdoc
+from statistics import mean
+from typing import Sequence
 
 from telegram import Update
-from telegram.ext import CallbackContext
+from telegram.ext import CallbackContext, CommandHandler, filters, MessageHandler
 
+from dispatcher import AsyncDispatcher
+import gaia_validators as gv
 from ouranos import db
-from ouranos.core.utils import Tokenizer, ExpiredTokenError, InvalidToken
-from ouranos.sdk import api
+from ouranos.core.database.models.app import Permission, User
+from ouranos.core.database.models.gaia import (
+    ActuatorState, Ecosystem, Measure, SensorDataCache)
+from ouranos.core.dispatchers import DispatcherFactory, DispatcherOptions
+from ouranos.core.utils import Tokenizer, ExpiredTokenError, InvalidTokenError
 
-from ouranos_chatbot.auth import activate_user, get_current_user
-from ouranos_chatbot.decorators import activation_required
+from ouranos_chatbot.auth import link_user, get_current_user
+from ouranos_chatbot.decorators import (
+    activation_required, make_handler, permission_required)
+from ouranos_chatbot.messages.templates import render_template
 
 
-TELEGRAM_CHAT_ACTIVATION_SUB = "activate_telegram_chat"
+TELEGRAM_CHAT_ACTIVATION_SUB = "link_telegram"
 
 
+DispatcherOptions.set_uri_lookup(
+    "chatbot", DispatcherOptions.get_uri_lookup("application-internal"))
+DispatcherOptions.set_options(
+    "chatbot", DispatcherOptions.get_options("application-internal"))
+
+
+async def _get_ecosystems(session, ecosystems: list[str] | None) -> Sequence[Ecosystem]:
+    if ecosystems:
+        return await Ecosystem.get_multiple(session, name=ecosystems)
+    return await Ecosystem.get_multiple_by_id(session, ecosystems_id=["recent"])
+
+
+def _summarize_sensors_data(sensors_data: list[SensorDataCache]) -> list[dict]:
+    rv = {}
+    for sensor_data in sensors_data:
+        try:
+            rv[sensor_data.measure].append(sensor_data.value)
+        except KeyError:
+            rv[sensor_data.measure] = [sensor_data.value]
+    return [
+        {
+            "name": measure,
+            "value": round(mean(data), 2),
+        }
+        for measure, data in rv.items()
+    ]
+
+
+def _summarize_actuators_state(actuators_state: list[ActuatorState]) -> list[dict]:
+    return [
+        {
+            "name": actuator_state.type.name,
+            "active": actuator_state.active,
+            "mode": actuator_state.mode.name,
+            "status": actuator_state.status,
+        }
+        for actuator_state in actuators_state
+    ]
+
+
+@make_handler(CommandHandler, "start")
 async def start(update: Update, context: CallbackContext) -> None:
-    telegram_id = update.effective_chat.id
+    """Start command."""
+    telegram_id = update.effective_user.id
     async with db.scoped_session() as session:
         user = await get_current_user(session, telegram_id)
     if user.is_authenticated:
@@ -28,8 +79,11 @@ async def start(update: Update, context: CallbackContext) -> None:
     )
 
 
-async def activate(update: Update, context: CallbackContext) -> None:
-    telegram_id = update.effective_chat.id
+@make_handler(CommandHandler, "link_account")
+async def link_account(update: Update, context: CallbackContext) -> None:
+    """Link your account using the token received on the website or by email. Once
+    linked, you will have access to more commands."""
+    telegram_id = update.effective_user.id
     args = context.args
     if len(args) != 1:
         await update.message.reply_html(
@@ -38,185 +92,181 @@ async def activate(update: Update, context: CallbackContext) -> None:
     token = args[0]
     try:
         payload = Tokenizer.loads(token)
-        user_id: str = payload["user_id"]
-        sub: str = payload["sub"]
-        if sub != TELEGRAM_CHAT_ACTIVATION_SUB:
-            raise InvalidToken
+        if payload["sub"] != TELEGRAM_CHAT_ACTIVATION_SUB:
+            raise InvalidTokenError
+        user_id: int = payload["user_id"]
         async with db.scoped_session() as session:
-            user = await api.user.get(session, user_id)
+            user = await User.get(session, user_id=user_id)
             if not user:
                 await update.message.reply_html(
                     "Could not find any user linked to this token"
                 )
                 return
-            await activate_user(session, user, telegram_id)
+            await link_user(session, user, telegram_id)
             await update.message.reply_html(
-                f"Hi {user.username}. You are now allowed to fully use the chat "
-                f"bot. To see the commands available, type /help "
+                f"Hi {user.username}. You are now allowed to fully use the "
+                f"chatbot. To see the commands available, type /help"
             )
     except ExpiredTokenError:
         await update.message.reply_html(
             "This token has expired, ask for a new one and repeat the "
             "activation process"
         )
-    except (InvalidToken, KeyError):
-        await update.message.reply_html(
-            "This token is invalid"
-        )
+    except (InvalidTokenError, KeyError):
+        await update.message.reply_html("This token is invalid")
 
 
+@make_handler(CommandHandler, "ecosystems")
 @activation_required
-async def ecosystem_status(update: Update, context: CallbackContext) -> None:
-    ecosystems = context.args
+async def get_ecosystems(update: Update, context: CallbackContext) -> None:
+    """Get the name of the ecosystems available."""
     async with db.scoped_session() as session:
-        msg = await api.messages.ecosystem_summary(session, ecosystems)
+        ecosystems = await Ecosystem.get_multiple_by_id(session, ecosystems_id=["recent"])
+        msg = await render_template("ecosystems_available", ecosystems=ecosystems)
     await update.message.reply_html(msg)
 
 
+@make_handler(CommandHandler, "ecosystems_status")
 @activation_required
-async def sensors(update: Update, context: CallbackContext) -> None:
-    ecosystems_name = context.args
+async def get_ecosystems_status(update: Update, context: CallbackContext) -> None:
+    """Get the status of the ecosystem(s) specified or all if not specified."""
+    ecosystems_name = context.args or None
     async with db.scoped_session() as session:
-        ecosystems = await api.ecosystem.get_multiple(session, ecosystems_name)
+        ecosystems = await _get_ecosystems(session, ecosystems_name)
+        msg = await render_template("ecosystems_status", ecosystems=ecosystems)
+    await update.message.reply_html(msg)
+
+
+@make_handler(CommandHandler, "sensors")
+@activation_required
+async def get_current_sensors(update: Update, context: CallbackContext) -> None:
+    """Get the sensors measures from the ecosystem(s) specified or all if not
+    specified."""
+    ecosystems_name = context.args or None
+    async with db.scoped_session() as session:
+        ecosystems = await _get_ecosystems(session, ecosystems_name)
         data = [
-            api.sensor.get_current_data(ecosystem.uid)
-            .update({"ecosystem_name": ecosystem.name})
+            {
+                "name": ecosystem.name,
+                "current_data": _summarize_sensors_data(
+                        await ecosystem.get_current_data(session)),
+            }
             for ecosystem in ecosystems
         ]
-    await update.message.reply_html("data")
+        data = [ecosystem for ecosystem in data if ecosystem["current_data"]]
+        measures = await Measure.get_multiple(session)
+        units = {measure.name: measure.unit for measure in measures}
+        msg = await render_template(
+            "current_sensors", ecosystems=data, units=units)
+    await update.message.reply_html(msg)
 
 
+@make_handler(CommandHandler, "actuators_state")
 @activation_required
-async def light_info(update: Update, context: CallbackContext) -> None:
-    ecosystems_name = context.args
+async def get_actuators_state(update: Update, context: CallbackContext) -> None:
+    """Get the actuators state from the ecosystem(s) specified or all if not
+    specified."""
+    ecosystems_name = context.args or None
     async with db.scoped_session() as session:
-        ecosystems = await api.ecosystem.get_multiple(session, ecosystems_name)
+        ecosystems = await _get_ecosystems(session, ecosystems_name)
         data = [
-            api.ecosystem.get_light_info(ecosystem) for ecosystem in ecosystems
+            {
+                "name": ecosystem.name,
+                "actuators_state": _summarize_actuators_state(
+                    await ecosystem.get_actuators_state(session)),
+            }
+            for ecosystem in ecosystems
         ]
-    await update.message.reply_text("data")
+        data = [ecosystem for ecosystem in data if ecosystem["actuators_state"]]
+        msg = await render_template("actuators_state", ecosystems=data)
+    await update.message.reply_html(msg)
 
 
-"""
-def on_weather(self, update, context) -> None:
+@make_handler(CommandHandler, "switch_actuator")
+@activation_required
+@permission_required(Permission.OPERATE)
+async def switch_actuator(update: Update, context: CallbackContext) -> None:
+    """Switch an actuator on or off. Require to be an operator."""
     args = context.args
-    if "forecast" in args:
-        forecast = True
-    else:
-        forecast = False
-    update.message.reply_text(
-        web_server.messages.weather(forecast=forecast)
-    )
-
-def on_sensors_recap(self, update, context):
-    args = context.args
-    to_remove = None
-    days = 1
-    for arg in args:
-        if "day" in arg:
-            to_remove = arg
-            days = int("".join(i for i in arg if i.isdigit()))
-            break
-    if days > 5:
-        days = 5
-    if to_remove:
-        args.remove(to_remove)
-    ecosystems = args
-    with db.scoped_session() as session:
-        message = web_server.messages.recap_sensors_info(
-            *ecosystems, session=session, days_ago=days)
-    update.message.reply_text(message)
-
-def on_turn_lights(self, update, context) -> None:
-    chat_id = update.effective_chat.id
-
-    if self.user_can(chat_id, Permission.OPERATE):
-        args = context.args
-        if len(args) < 2 or len(args) > 3:
-            update.message.reply_text(
-                "You need to provide the ecosystem, the mode and "
-                "optionally a timing"
-            )
-        else:
-            ecosystem = args[0]
-            mode = args[1]
-            if mode not in ("on", "off", "auto", "automatic"):
-                update.message.reply_text(
-                    "Mode has to be 'on', 'off' or 'automatic'"
-                )
-            if mode == "auto":
-                mode = "automatic"
-            if len(args) == 3:
-                countdown = args[2]
-            else:
-                countdown = 0
-            with db.scoped_session() as session:
-                ecosystem_qo = web_server.ecosystem.get_multiple(
-                    session=session, ecosystems=(ecosystem, ))
-                lights = web_server.ecosystem.get_light_info(ecosystem_qo)
-                if lights:
-                    try:
-                        ecosystem_id = web_server.ecosystem.get_ids(
-                            session=session, ecosystem=ecosystem).uid
-                    except ValueError:
-                        update.message.reply_text(
-                            f"Ecosystem {ecosystem} either does not exist"
-                        )
-                    data = {"ecosystem": ecosystem_id,
-                            "actuator": "light",
-                            "mode": mode,
-                            "countdown": countdown}
-                    self.manager.dispatcher.emit("application",
-                                                 "turn_actuator",
-                                                 data=data)
-                    update.message.reply_text(
-                        f"Lights have been turn to mode {mode} in {ecosystem}"
-                    )
-                else:
-                    update.message.reply_text(
-                        f"Ecosystem {ecosystem} either does not exist or has "
-                        f"no light"
-                    )
-    else:
-        update.message.reply_text("You are not allowed to turn lights on "
-                                  "or off")
+    if len(args) < 3 or len(args) > 4:
+        await update.message.reply_text(
+            "You need to provide the ecosystem, the actuator, the mode and "
+            "optionally a countdown (in seconds)"
+        )
+        return
+    ecosystem_name = args[0]
+    # Get and sanitize actuator input
+    actuator = args[1]
+    try:
+        actuator = gv.safe_enum_from_name(gv.HardwareType, actuator)
+        if actuator not in gv.HardwareType.actuator:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text(
+            f"Actuator '{actuator}' is not a valid actuator. valid actuators are"
+            f"{', '.join([x.name for x in gv.HardwareType.actuator])}")
+        return
+    actuator: gv.HardwareType
+    # Get and sanitize mode input
+    mode = args[2]
+    try:
+        mode = gv.safe_enum_from_name(gv.ActuatorModePayload, mode)
+    except ValueError:
+        await update.message.reply_text("Mode has to be 'on', 'off' or 'automatic'.")
+        return
+    mode: gv.ActuatorModePayload
+    # Get and sanitize countdown input
+    countdown: float = args[3] if len(args) == 4 else 0.0
+    # Process to logic
+    async with db.scoped_session() as session:
+        ecosystem = await Ecosystem.get(session, name=ecosystem_name)
+        if ecosystem is None:
+            await update.message.reply_text(
+                f"No ecosystem named '{ecosystem_name}' was found.")
+            return
+        actuator_state = await ecosystem.get_actuator_state(session, actuator)
+        if not actuator_state.active:
+            await update.message.reply_text(
+                f"Ecosystem {ecosystem_name} is cannot manage {actuator.name}.")
+            return
+        dispatcher: AsyncDispatcher = DispatcherFactory.get("chatbot")
+        await ecosystem.turn_actuator(dispatcher, actuator, mode, countdown)
+        await update.message.reply_text(
+            f"A request to turn {actuator.name} to {mode.name} has been sent to "
+            f"{ecosystem_name}."
+        )
 
 
-def base_of_tree(self, update, context) -> None:
-    chat_id = update.effective_chat.id
-    firstname = self.get_firstname(chat_id=chat_id)
-    # TODO: finish this with a tree of decision
-"""
+def _get_command_helper(handler: CommandHandler) -> str:
+    commands: list[str] = [i for i in handler.commands]
+    if len(commands) > 1:
+        raise ValueError("Only one command is allowed per handler")
+    doc = getdoc(handler.callback).replace("\n", " ")
+    return f"/{commands[0]} : {doc}\n"
 
 
-async def help_cmd(update: Update, context: CallbackContext) -> None:
-    telegram_id = update.effective_chat.id
+@make_handler(CommandHandler, "help")
+async def get_help(update: Update, context: CallbackContext) -> None:
+    telegram_id = update.effective_user.id
     async with db.scoped_session() as session:
         user = await get_current_user(session, telegram_id)
     msg = "Here is a list of the commands available:\n"
     if user.is_anonymous:
-        msg += "/register : register using the token received on the website " \
-               "or by email.\n"
+        msg += _get_command_helper(link_account)
         await update.message.reply_html(msg)
         return
-    msg += "/ecosystem_status : provides the status of all the ecosystems by " \
-           "default or the specifies ones.\n"
-    msg += "/weather : provides the current weather by default and the weather " \
-           "forecast if 'forecast' is provided as an argument.\n"
-    msg += "/light_info : provides the all the light info for all the " \
-           "ecosystems, or the specified one(s).\n"
-    msg += "/sensors : provides the current sensors data for all the ecosystems " \
-           "by default, or the specified one(s).\n"
-    msg += "/sensors_recap : provides the summary of the sensors data for the " \
-           "last day for all the ecosystems by default. The number of days " \
-           "covered can be specified by adding '#days' as an argument.\n"
-    msg += "/recap : send a recap with sensors data of the last 24h, weather " \
-           "forecast, warnings and calendar socketio.\n"
+    msg += _get_command_helper(get_ecosystems)
+    msg += _get_command_helper(get_ecosystems_status)
+    msg += _get_command_helper(get_current_sensors)
+    msg += _get_command_helper(get_actuators_state)
+    if user.can(Permission.OPERATE):
+        msg += _get_command_helper(switch_actuator)
     await update.message.reply_text(msg)
 
 
+@make_handler(MessageHandler, filters.COMMAND)
 async def unknown_command(update: Update, context: CallbackContext):
-    telegram_id = update.effective_chat.id
+    telegram_id = update.effective_user.id
     async with db.scoped_session() as session:
         user = await get_current_user(session, telegram_id)
     if user.is_authenticated:
@@ -225,5 +275,16 @@ async def unknown_command(update: Update, context: CallbackContext):
         sorry = "Sorry,"
     await update.message.reply_text(
         f"{sorry} I did not understand that command. Use /help to see the "
-        f"commands available"
-    )
+        f"commands available")
+
+
+HANDLERS = [
+    start,
+    get_ecosystems,
+    get_ecosystems_status,
+    get_current_sensors,
+    get_actuators_state,
+    switch_actuator,
+    get_help,
+    unknown_command,
+]
