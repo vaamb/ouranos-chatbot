@@ -5,4 +5,6 @@ Ecosystem {{ ecosystem["name"] }} is currently
 {%- else %}
  disconnected. It was last seen on {{ ecosystem["last_seen"] | format_datetime }}.
 {% endif %}
+{% else %}
+There is not ecosystem currently registered to GAIA
 {% endfor %}

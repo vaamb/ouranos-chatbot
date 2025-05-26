@@ -145,7 +145,7 @@ async def get_current_sensors(update: Update, context: CallbackContext) -> None:
     ecosystems_name = context.args or None
     async with db.scoped_session() as session:
         ecosystems = await _get_ecosystems(session, ecosystems_name)
-        ecosystems_data = [
+        data = [
             {
                 "name": ecosystem.name,
                 "current_data": _summarize_sensors_data(
@@ -153,17 +153,19 @@ async def get_current_sensors(update: Update, context: CallbackContext) -> None:
             }
             for ecosystem in ecosystems
         ]
+        data = [ecosystem for ecosystem in data if ecosystem["current_data"]]
         measures = await Measure.get_multiple(session)
         units = {measure.name: measure.unit for measure in measures}
         msg = await render_template(
-            "current_sensors", ecosystems=ecosystems_data, units=units)
+            "current_sensors", ecosystems=data, units=units)
     await update.message.reply_html(msg)
 
 
 @make_handler(CommandHandler, "actuators_state")
 @activation_required
 async def get_actuators_state(update: Update, context: CallbackContext) -> None:
-    """Get the actuators state from the ecosystem(s) specified or all if not"""
+    """Get the actuators state from the ecosystem(s) specified or all if not
+    specified."""
     ecosystems_name = context.args or None
     async with db.scoped_session() as session:
         ecosystems = await _get_ecosystems(session, ecosystems_name)
@@ -175,6 +177,7 @@ async def get_actuators_state(update: Update, context: CallbackContext) -> None:
             }
             for ecosystem in ecosystems
         ]
+        data = [ecosystem for ecosystem in data if ecosystem["actuators_state"]]
         msg = await render_template("actuators_state", ecosystems=data)
     await update.message.reply_html(msg)
 
@@ -183,7 +186,7 @@ async def get_actuators_state(update: Update, context: CallbackContext) -> None:
 @activation_required
 @permission_required(Permission.OPERATE)
 async def switch_actuator(update: Update, context: CallbackContext) -> None:
-    """Switch an actuator on or off."""
+    """Switch an actuator on or off. Require to be an operator."""
     args = context.args
     if len(args) < 3 or len(args) > 4:
         await update.message.reply_text(
