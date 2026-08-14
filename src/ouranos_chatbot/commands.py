@@ -221,6 +221,37 @@ async def get_warnings(update: Update, context: CallbackContext) -> None:
     await update.message.reply_html(msg)
 
 
+@make_handler(CommandHandler, "recap")
+@activation_required
+async def get_recap(update: Update, context: CallbackContext) -> None:
+    """Get a recap of the ecosystem(s)' status, sensors data, actuators state
+    and warnings."""
+    ecosystems_name = context.args or None
+    async with db.scoped_session() as session:
+        ecosystems = await _get_ecosystems(session, ecosystems_name)
+        data = [
+            {
+                "name": ecosystem.name,
+                "connected": ecosystem.connected,
+                "status": ecosystem.status,
+                "last_seen": ecosystem.last_seen,
+                "current_data": _summarize_sensors_data(
+                    await ecosystem.get_current_data(session)),
+                "actuators_state": _summarize_actuators_state(
+                    await ecosystem.get_actuators_state(session)),
+            }
+            for ecosystem in ecosystems
+        ]
+        measures = await Measure.get_multiple(session)
+        units = {measure.name: measure.unit for measure in measures}
+        warnings = await _get_warnings(session, ecosystems)
+        names = {ecosystem.uid: ecosystem.name for ecosystem in ecosystems}
+        msg = await render_template(
+            "recap", ecosystems=data, units=units,
+            warnings=_summarize_warnings(warnings, names))
+    await update.message.reply_html(msg)
+
+
 @make_handler(CommandHandler, "switch_actuator")
 @activation_required
 @permission_required(Permission.OPERATE)
@@ -299,6 +330,7 @@ async def get_help(update: Update, context: CallbackContext) -> None:
     msg += _get_command_helper(get_current_sensors)
     msg += _get_command_helper(get_actuators_state)
     msg += _get_command_helper(get_warnings)
+    msg += _get_command_helper(get_recap)
     if user.can(Permission.OPERATE):
         msg += _get_command_helper(switch_actuator)
     await update.message.reply_text(msg)
@@ -325,6 +357,7 @@ HANDLERS = [
     get_current_sensors,
     get_actuators_state,
     get_warnings,
+    get_recap,
     switch_actuator,
     get_help,
     unknown_command,
