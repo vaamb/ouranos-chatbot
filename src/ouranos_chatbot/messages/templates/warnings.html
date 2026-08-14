@@ -1,0 +1,12 @@
+{% if warnings | length == 0 -%}
+There is currently no warning reported
+{% else -%}
+{% if warnings | length == 1 %}
+There is currently 1 warning reported:
+{% else %}
+There are currently {{ warnings | length }} warnings reported:
+{% endif %}
+{% for warning in warnings -%}
+- [{{ warning["level"] | capitalize }}] {{ warning["ecosystem"] }}: {{ warning["title"] }} ({{ warning["created_on"] | format_datetime }})
+{% endfor %}
+{% endif %}

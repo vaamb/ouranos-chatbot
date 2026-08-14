@@ -10,7 +10,7 @@ import gaia_validators as gv
 from ouranos import db
 from ouranos.core.database.models.app import Permission, User
 from ouranos.core.database.models.gaia import (
-    ActuatorState, Ecosystem, Measure, SensorDataCache)
+    ActuatorState, Ecosystem, GaiaWarning, Measure, SensorDataCache)
 from ouranos.core.dispatchers import DispatcherFactory, DispatcherOptions
 from ouranos.core.utils import Tokenizer, ExpiredTokenError, InvalidTokenError
 
@@ -33,6 +33,16 @@ async def _get_ecosystems(session, ecosystems: list[str] | None) -> Sequence[Eco
     if ecosystems:
         return await Ecosystem.get_multiple(session, name=ecosystems)
     return await Ecosystem.get_multiple_by_id(session, ecosystems_id=["recent"])
+
+
+async def _get_warnings(
+        session,
+        ecosystems: Sequence[Ecosystem],
+) -> Sequence[GaiaWarning]:
+    if not ecosystems:
+        return []
+    return await GaiaWarning.get_multiple(
+        session, ecosystems=[ecosystem.uid for ecosystem in ecosystems])
 
 
 def _summarize_sensors_data(sensors_data: list[SensorDataCache]) -> list[dict]:
@@ -60,6 +70,21 @@ def _summarize_actuators_state(actuators_state: list[ActuatorState]) -> list[dic
             "status": actuator_state.status,
         }
         for actuator_state in actuators_state
+    ]
+
+
+def _summarize_warnings(
+        warnings: Sequence[GaiaWarning],
+        ecosystem_names: dict[str, str],
+) -> list[dict]:
+    return [
+        {
+            "level": warning.level.name,
+            "ecosystem": ecosystem_names.get(warning.created_by, warning.created_by),
+            "title": warning.title,
+            "created_on": warning.created_on,
+        }
+        for warning in warnings
     ]
 
 
@@ -182,6 +207,20 @@ async def get_actuators_state(update: Update, context: CallbackContext) -> None:
     await update.message.reply_html(msg)
 
 
+@make_handler(CommandHandler, "warnings")
+@activation_required
+async def get_warnings(update: Update, context: CallbackContext) -> None:
+    """Get the ecosystem(s)' unsolved warnings, if any."""
+    ecosystems_name = context.args or None
+    async with db.scoped_session() as session:
+        ecosystems = await _get_ecosystems(session, ecosystems_name)
+        warnings = await _get_warnings(session, ecosystems)
+        names = {ecosystem.uid: ecosystem.name for ecosystem in ecosystems}
+        msg = await render_template(
+            "warnings", warnings=_summarize_warnings(warnings, names))
+    await update.message.reply_html(msg)
+
+
 @make_handler(CommandHandler, "switch_actuator")
 @activation_required
 @permission_required(Permission.OPERATE)
@@ -259,6 +298,7 @@ async def get_help(update: Update, context: CallbackContext) -> None:
     msg += _get_command_helper(get_ecosystems_status)
     msg += _get_command_helper(get_current_sensors)
     msg += _get_command_helper(get_actuators_state)
+    msg += _get_command_helper(get_warnings)
     if user.can(Permission.OPERATE):
         msg += _get_command_helper(switch_actuator)
     await update.message.reply_text(msg)
@@ -284,6 +324,7 @@ HANDLERS = [
     get_ecosystems_status,
     get_current_sensors,
     get_actuators_state,
+    get_warnings,
     switch_actuator,
     get_help,
     unknown_command,
