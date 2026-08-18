@@ -114,6 +114,7 @@ async def link_account(update: Update, context: CallbackContext) -> None:
         await update.message.reply_html(
             "You need to provide your activation token after the command"
         )
+        return
     token = args[0]
     try:
         payload = Tokenizer.loads(token)

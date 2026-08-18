@@ -18,6 +18,15 @@ chatbot = "ouranos_chatbot.plugin_setup:plugin"
 [project.urls]
 repository  = "https://github.com/vaamb/ouranos-chatbot.git"
 
+[dependency-groups]
+test = [
+    "coverage~=7.15",
+    "pytest~=9.1",
+    "pytest-asyncio~=1.4",
+
+    "ouranos-core @ git+https://github.com/vaamb/ouranos-core.git",
+]
+
 [build-system]
 requires = [
     "setuptools>=61",
@@ -31,3 +40,6 @@ include-package-data = true
 
 [tool.setuptools.dynamic]
 version = {attr = "ouranos_chatbot.__version__"}
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "session"
