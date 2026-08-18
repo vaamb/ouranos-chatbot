@@ -20,8 +20,11 @@ repository  = "https://github.com/vaamb/ouranos-chatbot.git"
 
 [dependency-groups]
 test = [
+    "coverage~=7.15",
     "pytest~=9.1",
     "pytest-asyncio~=1.4",
+
+    "ouranos-core @ git+https://github.com/vaamb/ouranos-core.git",
 ]
 
 [build-system]
