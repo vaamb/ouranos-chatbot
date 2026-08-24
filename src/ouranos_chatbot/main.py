@@ -21,7 +21,20 @@ class Chatbot(Functionality):
                 "The config parameters 'TELEGRAM_BOT_TOKEN' is not set, it is "
                 "not possible to use the chatbot functionality.")
         self.token = token
-        self.application: Application | None = None
+        self._application: Application | None = None
+
+    @property
+    def application(self) -> Application:
+        if self._application is None:
+            raise AttributeError(
+                "The application has not been initialized. Run "
+                "`build_application()` to initialize it.`"
+
+            )
+        return self._application
+
+    def build_application(self) -> None:
+        self._application = Application.builder().token(self.token).build()
 
     def load_handlers(self):
         from ouranos_chatbot.commands import HANDLERS
@@ -29,19 +42,23 @@ class Chatbot(Functionality):
         for handler in HANDLERS:
             self.application.add_handler(handler)
 
-    async def _startup(self):
+    async def startup(self):
         if self.token is None:
             raise ValueError(
                 "The config parameters 'TELEGRAM_BOT_TOKEN' is not set, it is "
                 "not possible to use the chatbot functionality."
             )
-        self.application = Application.builder().token(self.token).build()
+        self.build_application()
         self.load_handlers()
         await self.application.initialize()
+        # `Application`'s updater is automatically created with the default builder
+        assert self.application.updater is not None
         await self.application.updater.start_polling()
         await self.application.start()
 
-    async def _shutdown(self):
+    async def shutdown(self):
+        # `Application`'s updater is automatically created with the default builder
+        assert self.application.updater is not None
         if self.application.updater.running:
             await self.application.updater.stop()
         if self.application.running:
