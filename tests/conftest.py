@@ -21,6 +21,7 @@ def config(tmp_path_factory):
         "archive": "sqlite+aiosqlite://",
         "transient": "sqlite+aiosqlite://",
     }
+    Config.TELEGRAM_BOT_TOKEN = "DefAToken"
 
     config = setup_config(Config)
     _db.init(config)
