@@ -43,15 +43,21 @@ install_ouranos_chatbot() {
         die "Failed to clone Ouranos chatbot repository"
     CLONED=true
 
-    # Install the plugin. It is picked up as a uv workspace member as it sits in
-    # `${OURANOS_DIR}/lib` and is named `ouranos-*`
     log INFO "Installing the plugin in Ouranos' virtual environment..."
     cd "${OURANOS_DIR}" ||
         die "Failed to change to directory: ${OURANOS_DIR}"
+
+    # Declare the plugin in the master pyproject.toml
+    local helpers="${OURANOS_DIR}/scripts/utils/pyproject_helpers.sh"
+    [[ -f "${helpers}" ]] ||
+        die "${helpers} not found. Please update Ouranos first, then retry."
+    source . "${helpers}"
+    add_dependency ouranos-chatbot ||
+        die "Failed to declare ouranos-chatbot in ${OURANOS_DIR}/pyproject.toml"
+
     uv lock --upgrade ||
         die "Failed to update uv lock"
-    # use --inexact to keep packages not defined in pyproject.toml such as the DB drivers
-    uv sync --all-packages --inexact ||
+    uv sync ||
         die "Failed to update Python virtual environment"
 }
 
